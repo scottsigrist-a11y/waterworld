@@ -15,6 +15,70 @@ export const GlassesFrame: React.FC<GlassesFrameProps> = ({
 }) => {
   const touchStartRef = React.useRef<{ x: number; y: number; time: number } | null>(null);
 
+  const processGesture = React.useCallback(
+    (endX: number, endY: number) => {
+      if (!touchStartRef.current) return;
+      const dx = endX - touchStartRef.current.x;
+      const dy = endY - touchStartRef.current.y;
+      const dt = Date.now() - touchStartRef.current.time;
+
+      const minDistance = 30; // px
+      const maxTime = 800; // ms
+
+      if (dt < maxTime) {
+        if (Math.abs(dx) > minDistance || Math.abs(dy) > minDistance) {
+          if (Math.abs(dx) > Math.abs(dy)) {
+            // Horizontal swipe
+            if (dx < 0) {
+              onSwipe('LEFT');
+            } else {
+              onSwipe('RIGHT');
+            }
+          } else {
+            // Vertical swipe
+            if (dy < 0) {
+              onSwipe('UP');
+            } else {
+              onSwipe('DOWN');
+            }
+          }
+        } else if (Math.abs(dx) < 15 && Math.abs(dy) < 15) {
+          // Tap / Select
+          onSelect();
+        }
+      }
+      touchStartRef.current = null;
+    },
+    [onSwipe, onSelect]
+  );
+
+  // Global touch handlers so that even if Leaflet or another layer captures pointer events, swipes always trigger
+  React.useEffect(() => {
+    const handleTouchStartWindow = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        touchStartRef.current = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY,
+          time: Date.now(),
+        };
+      }
+    };
+
+    const handleTouchEndWindow = (e: TouchEvent) => {
+      if (e.changedTouches.length > 0) {
+        processGesture(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      }
+    };
+
+    window.addEventListener('touchstart', handleTouchStartWindow, { passive: true });
+    window.addEventListener('touchend', handleTouchEndWindow, { passive: true });
+
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStartWindow);
+      window.removeEventListener('touchend', handleTouchEndWindow);
+    };
+  }, [processGesture]);
+
   const handlePointerDown = (e: React.PointerEvent) => {
     // Only respond to primary click / primary touch
     if (e.button !== 0) return;
@@ -26,44 +90,14 @@ export const GlassesFrame: React.FC<GlassesFrameProps> = ({
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
-    if (!touchStartRef.current) return;
-    const dx = e.clientX - touchStartRef.current.x;
-    const dy = e.clientY - touchStartRef.current.y;
-    const dt = Date.now() - touchStartRef.current.time;
-
-    const minDistance = 35; // px
-    const maxTime = 700; // ms
-
-    if (dt < maxTime) {
-      if (Math.abs(dx) > minDistance || Math.abs(dy) > minDistance) {
-        if (Math.abs(dx) > Math.abs(dy)) {
-          // Horizontal swipe
-          if (dx < 0) {
-            onSwipe('LEFT');
-          } else {
-            onSwipe('RIGHT');
-          }
-        } else {
-          // Vertical swipe
-          if (dy < 0) {
-            onSwipe('UP');
-          } else {
-            onSwipe('DOWN');
-          }
-        }
-      } else if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
-        // Tap / Select
-        onSelect();
-      }
-    }
-    touchStartRef.current = null;
+    processGesture(e.clientX, e.clientY);
   };
 
   if (displayMode === 'fullscreen') {
     return (
       <div
         id="glasses-viewport-fullscreen"
-        className="relative w-screen h-screen overflow-hidden bg-black select-none"
+        className="relative w-screen h-screen overflow-hidden bg-black select-none touch-none"
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
       >
@@ -75,7 +109,7 @@ export const GlassesFrame: React.FC<GlassesFrameProps> = ({
   return (
     <div
       id="glasses-simulator-canvas"
-      className="relative w-full min-h-screen bg-slate-950 flex flex-col items-center justify-center p-2 sm:p-6 overflow-hidden select-none"
+      className="relative w-full min-h-screen bg-slate-950 flex flex-col items-center justify-center p-2 sm:p-6 overflow-hidden select-none touch-none"
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
     >

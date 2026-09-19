@@ -1,11 +1,26 @@
 @import "tailwindcss";
 
+/* Prevent browser pull-to-refresh, zooming, and gesture swallowing on mobile & glasses webviews */
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  background-color: #000000;
+}
+
 /* Leaflet Base Fixes */
 .leaflet-container {
   width: 100%;
   height: 100%;
   background: #0d1b2a !important;
   font-family: inherit;
+  touch-action: none !important;
 }
 
 /* Wing Flapping Animations for Seagull */

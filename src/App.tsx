@@ -46,7 +46,17 @@ export default function App() {
   const [floodingLineActive, setFloodingLineActive] = useState<boolean>(false);
 
   const [zoomLevel, setZoomLevel] = useState<number>(14);
-  const [displayMode, setDisplayMode] = useState<'glasses' | 'fullscreen'>('fullscreen');
+  const [displayMode, setDisplayMode] = useState<'glasses' | 'fullscreen'>(() => {
+    // Check URL parameters for explicit mode, e.g. ?mode=glasses or ?mode=fullscreen
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const modeParam = params.get('mode');
+      if (modeParam === 'glasses' || modeParam === 'fullscreen') {
+        return modeParam;
+      }
+    }
+    return 'fullscreen';
+  });
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const [gpsActive, setGpsActive] = useState<boolean>(false);
 
@@ -116,11 +126,33 @@ export default function App() {
     setCircleTimeRemaining(0);
   }, []);
 
-  // 1. Real GPS Tracking
+  // 1. Real GPS Tracking with multi-stage fallback
   useEffect(() => {
     if (!navigator.geolocation) return;
 
     let hasCentered = false;
+
+    // First try a quick high-accuracy fetch
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (!hasCentered) {
+          hasCentered = true;
+          setGpsActive(true);
+          const initLoc: LatLng = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+          };
+          setUserLocation(initLoc);
+          const seed = generateSeedPath(initLoc);
+          setPath(buildPathWithDistances(seed));
+        }
+      },
+      (err) => {
+        console.warn('Initial high-accuracy GPS error, will rely on watchPosition:', err.message);
+      },
+      { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
+    );
+
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         setGpsActive(true);
@@ -148,10 +180,10 @@ export default function App() {
         }
       },
       (err) => {
-        console.warn('Geolocation access:', err.message);
-        setGpsActive(false);
+        console.warn('Geolocation watch error:', err.message);
+        // Do not crash or lock state; keep existing location active
       },
-      { enableHighAccuracy: true, maximumAge: 3000 }
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
     );
 
     return () => {
@@ -507,68 +539,61 @@ export default function App() {
     [handleZoomIn, handleZoomOut, triggerFlooding, triggerCircleFlight, handleSelect]
   );
 
-  // Keyboard Event Listener (MRBD OS translation to Arrow keys and Enter)
+  // Keyboard & Glasses Input Listener (MRBD OS translation to Arrow keys, Media keys, Enter, and Gamepad)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      switch (e.key) {
-        case 'ArrowUp':
-          e.preventDefault();
-          handleDpadAction('UP');
-          break;
-        case 'ArrowDown':
-          e.preventDefault();
-          handleDpadAction('DOWN');
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          handleDpadAction('LEFT');
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          handleDpadAction('RIGHT');
-          break;
-        case 'Enter':
-        case ' ':
-          e.preventDefault();
-          handleDpadAction('SELECT');
-          break;
-        // Manual directional walk controls for desktop testing
-        case 'w':
-        case 'W': {
-          setUserLocation((prev) => {
-            const next = { lat: prev.lat + 0.0008, lng: prev.lng };
-            setPath((p) => buildPathWithDistances([...p, { ...next, distanceFromStart: 0, timestamp: Date.now() }]));
-            return next;
-          });
-          break;
-        }
-        case 's':
-        case 'S': {
-          setUserLocation((prev) => {
-            const next = { lat: prev.lat - 0.0008, lng: prev.lng };
-            setPath((p) => buildPathWithDistances([...p, { ...next, distanceFromStart: 0, timestamp: Date.now() }]));
-            return next;
-          });
-          break;
-        }
-        case 'a':
-        case 'A': {
-          setUserLocation((prev) => {
-            const next = { lat: prev.lat, lng: prev.lng - 0.001 };
-            setPath((p) => buildPathWithDistances([...p, { ...next, distanceFromStart: 0, timestamp: Date.now() }]));
-            return next;
-          });
-          break;
-        }
-        case 'd':
-        case 'D': {
-          setUserLocation((prev) => {
-            const next = { lat: prev.lat, lng: prev.lng + 0.001 };
-            setPath((p) => buildPathWithDistances([...p, { ...next, distanceFromStart: 0, timestamp: Date.now() }]));
-            return next;
-          });
-          break;
-        }
+      const key = e.key;
+      const code = e.code;
+
+      if (key === 'ArrowUp' || code === 'ArrowUp' || key === 'Up') {
+        e.preventDefault();
+        handleDpadAction('UP');
+      } else if (key === 'ArrowDown' || code === 'ArrowDown' || key === 'Down') {
+        e.preventDefault();
+        handleDpadAction('DOWN');
+      } else if (key === 'ArrowLeft' || code === 'ArrowLeft' || key === 'Left') {
+        e.preventDefault();
+        handleDpadAction('LEFT');
+      } else if (key === 'ArrowRight' || code === 'ArrowRight' || key === 'Right') {
+        e.preventDefault();
+        handleDpadAction('RIGHT');
+      } else if (
+        key === 'Enter' ||
+        key === ' ' ||
+        key === 'Select' ||
+        code === 'Enter' ||
+        code === 'Space' ||
+        code === 'NumpadEnter' ||
+        key === 'MediaPlayPause' ||
+        key === 'HeadsetHook'
+      ) {
+        e.preventDefault();
+        handleDpadAction('SELECT');
+      } else if (key === 'w' || key === 'W') {
+        // Manual directional walk controls for testing
+        setUserLocation((prev) => {
+          const next = { lat: prev.lat + 0.0008, lng: prev.lng };
+          setPath((p) => buildPathWithDistances([...p, { ...next, distanceFromStart: 0, timestamp: Date.now() }]));
+          return next;
+        });
+      } else if (key === 's' || key === 'S') {
+        setUserLocation((prev) => {
+          const next = { lat: prev.lat - 0.0008, lng: prev.lng };
+          setPath((p) => buildPathWithDistances([...p, { ...next, distanceFromStart: 0, timestamp: Date.now() }]));
+          return next;
+        });
+      } else if (key === 'a' || key === 'A') {
+        setUserLocation((prev) => {
+          const next = { lat: prev.lat, lng: prev.lng - 0.001 };
+          setPath((p) => buildPathWithDistances([...p, { ...next, distanceFromStart: 0, timestamp: Date.now() }]));
+          return next;
+        });
+      } else if (key === 'd' || key === 'D') {
+        setUserLocation((prev) => {
+          const next = { lat: prev.lat, lng: prev.lng + 0.001 };
+          setPath((p) => buildPathWithDistances([...p, { ...next, distanceFromStart: 0, timestamp: Date.now() }]));
+          return next;
+        });
       }
     };
 
