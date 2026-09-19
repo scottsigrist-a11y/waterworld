@@ -1,0 +1,10 @@
+{
+  "name": "Water World",
+  "description": "A location-based territory flooding game for Meta Ray-Ban Display glasses using OpenStreetMap and D-pad controls.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
